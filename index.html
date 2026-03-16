@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BI 產能計算工具</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-primary:#0d1117;
+  --bg-secondary:#161b22;
+  --bg-card:#1c2128;
+  --bg-hover:#21262d;
+  --border:#30363d;
+  --border-light:#444c56;
+  --text-primary:#e6edf3;
+  --text-secondary:#8b949e;
+  --text-muted:#6e7681;
+  --accent:#388bfd;
+  --accent-dark:#1f6feb;
+  --green:#3fb950;
+  --green-bg:#0d2818;
+  --green-border:#196c2e;
+  --red:#f85149;
+  --red-bg:#3d0808;
+  --red-border:#8b1d1d;
+  --yellow:#d29922;
+  --yellow-bg:#2d1f00;
+  --yellow-border:#6e4c00;
+  --font:'Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:'Consolas','Courier New',monospace;
+}
+body{background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh}
+
+/* ── Header ── */
+.header{background:var(--bg-secondary);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px}
+.header-icon{width:38px;height:38px;background:linear-gradient(135deg,#388bfd,#1f6feb);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.header h1{font-size:18px;font-weight:700}
+.header-sub{font-size:11px;color:var(--text-muted);margin-top:2px}
+.header-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* ── Tabs ── */
+.tabs{background:var(--bg-secondary);border-bottom:1px solid var(--border);padding:0 24px;display:flex;overflow-x:auto}
+.tab-btn{padding:12px 18px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-secondary);font-size:13px;font-family:var(--font);cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.tab-btn:hover{color:var(--text-primary);background:rgba(255,255,255,.03)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-badge{font-size:10px;padding:1px 6px;border-radius:10px;background:var(--bg-hover);color:var(--text-muted);border:1px solid var(--border)}
+
+/* ── Layout ── */
+.main{max-width:1500px;margin:0 auto;padding:20px 24px}
+.tab-panel{display:none}.tab-panel.active{display:block}
+
+/* ── Section ── */
+.section{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin-bottom:18px;overflow:hidden}
+.section-header{padding:12px 18px;background:var(--bg-secondary);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.section-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px}
+.section-body{padding:18px}
+
+/* ── Buttons ── */
+.btn{padding:5px 12px;border:1px solid;border-radius:6px;font-size:13px;font-family:var(--font);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;line-height:1.4}
+.btn-primary{background:var(--accent-dark);border-color:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent)}
+.btn-secondary{background:var(--bg-hover);border-color:var(--border);color:var(--text-primary)}.btn-secondary:hover{border-color:var(--border-light)}
+.btn-danger{background:var(--red-bg);border-color:var(--red-border);color:var(--red)}.btn-danger:hover{background:#5a1010}
+.btn-sm{padding:3px 8px;font-size:12px}
+
+/* ── Machine Grid ── */
+.machine-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.machine-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.machine-card-header{padding:9px 13px;background:rgba(56,139,253,.08);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.machine-series{font-size:15px;font-weight:700;color:var(--accent)}
+.machine-model{font-size:11px;color:var(--text-secondary);font-family:var(--mono)}
+.machine-count{font-size:12px;padding:2px 8px;border-radius:10px;background:var(--bg-card);border:1px solid var(--border)}
+.machine-card-body{padding:10px 13px}
+.machine-units{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px;min-height:28px}
+.unit-tag{background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:3px}
+.unit-del{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0;line-height:1;transition:color .15s}.unit-del:hover{color:var(--red)}
+.add-unit-row{display:flex;gap:5px}
+.add-unit-input{flex:1;background:var(--bg-primary);border:1px solid var(--border);border-radius:4px;padding:4px 8px;color:var(--text-primary);font-size:12px;font-family:var(--mono);min-width:0}
+.add-unit-input:focus{outline:none;border-color:var(--accent)}
+.add-unit-input::placeholder{color:var(--text-muted)}
+
+/* ── Settings row ── */
+.settings-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px}
+.settings-label{font-size:13px;color:var(--text-secondary);white-space:nowrap}
+.settings-input{background:var(--bg-primary);border:1px solid var(--border);border-radius:4px;padding:5px 10px;color:var(--text-primary);font-size:13px;width:80px}
+.settings-input:focus{outline:none;border-color:var(--accent)}
+
+/* ── Table ── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead{background:var(--bg-secondary)}
+th{padding:9px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--bg-hover)}
+.calc{color:var(--accent);font-family:var(--mono)}
+.calc-hi{color:#e6c060;font-family:var(--mono);font-weight:700}
+
+/* table inputs */
+.ti{background:var(--bg-primary);border:1px solid var(--border);border-radius:3px;padding:3px 6px;color:var(--text-primary);font-size:12px;font-family:var(--font);width:100%}
+.ti:focus{outline:none;border-color:var(--accent)}
+select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%238b949e' d='M5 7L0 2h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center;padding-right:20px}
+
+/* ── Status badges ── */
+.badge-ok{display:inline-flex;align-items:center;gap:3px;background:var(--green-bg);border:1px solid var(--green-border);color:var(--green);padding:2px 7px;border-radius:10px;font-size:11px}
+.badge-over{display:inline-flex;align-items:center;gap:3px;background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);padding:2px 7px;border-radius:10px;font-size:11px}
+.badge-idle{display:inline-flex;align-items:center;gap:3px;background:var(--yellow-bg);border:1px solid var(--yellow-border);color:var(--yellow);padding:2px 7px;border-radius:10px;font-size:11px}
+.badge-neutral{display:inline-flex;align-items:center;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-muted);padding:2px 7px;border-radius:10px;font-size:11px}
+
+/* ── Alerts ── */
+.alert-list{display:flex;flex-direction:column;gap:7px}
+.alert-ok{padding:9px 13px;border-radius:5px;background:var(--green-bg);border:1px solid var(--green-border);color:var(--green);font-size:13px;display:flex;align-items:center;gap:8px}
+.alert-over{padding:9px 13px;border-radius:5px;background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);font-size:13px;display:flex;align-items:center;gap:8px}
+.alert-idle{padding:9px 13px;border-radius:5px;background:var(--yellow-bg);border:1px solid var(--yellow-border);color:var(--yellow);font-size:13px;display:flex;align-items:center;gap:8px}
+
+/* ── Summary cards ── */
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;padding:18px}
+.sum-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:13px;display:flex;flex-direction:column;gap:7px}
+.sum-card.ok{border-color:var(--green-border)}
+.sum-card.over{border-color:var(--red-border)}
+.sum-top{display:flex;justify-content:space-between;align-items:center}
+.sum-series{font-size:17px;font-weight:700;color:var(--accent)}
+.sum-nums{display:flex;align-items:baseline;gap:5px}
+.sum-req{font-size:24px;font-weight:700}
+.sum-avail{font-size:13px;color:var(--text-muted)}
+.sum-model{font-size:11px;color:var(--text-muted);font-family:var(--mono)}
+
+/* ── Total bar ── */
+.total-bar{display:flex;gap:28px;align-items:center;padding:13px 18px;border-top:1px solid var(--border);flex-wrap:wrap}
+.total-item{display:flex;flex-direction:column;gap:2px}
+.total-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.total-value{font-size:22px;font-weight:700;font-family:var(--mono);color:var(--text-primary)}
+.total-unit{font-size:12px;color:var(--text-secondary);font-family:var(--font)}
+.vdiv{width:1px;background:var(--border);height:36px}
+
+/* ── Coming soon ── */
+.coming-soon{text-align:center;padding:80px 20px;color:var(--text-muted)}
+.coming-soon .cs-icon{font-size:52px;margin-bottom:16px}
+.coming-soon h2{font-size:20px;color:var(--text-secondary);margin-bottom:10px}
+.coming-soon p{font-size:14px;max-width:420px;margin:0 auto 20px}
+
+/* ── Empty ── */
+.empty{text-align:center;padding:36px;color:var(--text-muted);font-size:13px}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg-primary)}
+::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
+
+@media(max-width:768px){
+  .main{padding:12px 14px}
+  .header{padding:12px 14px}
+  .tabs{padding:0 10px}
+  .machine-grid{grid-template-columns:1fr}
+  .summary-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+}
+</style>
+</head>
+<body>
+
+<!-- ───── Header ───── -->
+<div class="header">
+  <div class="header-icon">⚡</div>
+  <div>
+    <h1>BI 產能計算工具</h1>
+    <div class="header-sub">Burn-In 生產線 · 半導體測試</div>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ 匯出 CSV</button>
+    <button class="btn btn-danger btn-sm" onclick="resetAll()">🔄 重置資料</button>
+  </div>
+</div>
+
+<!-- ───── Tabs ───── -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('phase1',this)">⚙️ 第一階段：產能計算</button>
+  <button class="tab-btn" onclick="switchTab('phase2',this)">🔒 第二階段：機台限制 <span class="tab-badge">開發中</span></button>
+  <button class="tab-btn" onclick="switchTab('phase3',this)">🔒 第三階段：配置建議 <span class="tab-badge">開發中</span></button>
+</div>
+
+<div class="main">
+
+  <!-- ═══════════════ Phase 1 ═══════════════ -->
+  <div class="tab-panel active" id="tab-phase1">
+
+    <!-- 機台管理 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🏭 機台管理</div>
+        <span style="font-size:12px;color:var(--text-muted)">點「＋新增」可加入機台編號；按 × 可刪除單台</span>
+      </div>
+      <div class="section-body">
+        <div class="machine-grid" id="machineGrid"></div>
+      </div>
+    </div>
+
+    <!-- 全域參數 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">⚙️ 全域參數</div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Loader ÷ Oven 比例：</span>
+        <input class="settings-input" type="number" id="loaderRatio" min="0" max="5" step="0.01" value="0.2" oninput="saveAndRender()">
+        <span style="font-size:12px;color:var(--text-muted)">需求 Loader 數 = CEILING( 需求 Oven 數 × 此比例 )</span>
+      </div>
+    </div>
+
+    <!-- 產品設定 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">📋 產品參數設定</div>
+        <button class="btn btn-primary btn-sm" onclick="addProduct()">＋ 新增產品</button>
+      </div>
+      <div id="productTableArea">
+        <div class="table-wrap">
+          <table id="productTable">
+            <thead>
+              <tr>
+                <th style="width:28px;text-align:center">#</th>
+                <th>Oven Type</th>
+                <th>Package</th>
+                <th>Owner</th>
+                <th>BIB Set</th>
+                <th>BI Time<br><span style="font-weight:400;text-transform:none">(hrs)</span></th>
+                <th>Operate<br><span style="font-weight:400;text-transform:none">(hrs)</span></th>
+                <th>Mask Rate</th>
+                <th>Socket<br><span style="font-weight:400;text-transform:none">(ea)</span></th>
+                <th>Plan Output<br><span style="font-weight:400;text-transform:none">(K)</span></th>
+                <th title="Operate ÷ BI Time">Turn</th>
+                <th title="BIB Set × Socket ÷ 1000">BIB(K)</th>
+                <th title="BIB(K) × Turn × Mask Rate">單台產能(K)</th>
+                <th title="CEILING( Output ÷ 單台產能 )">需求<br>Oven</th>
+                <th title="CEILING( Oven × Loader比例 )">需求<br>Loader</th>
+                <th style="width:38px"></th>
+              </tr>
+            </thead>
+            <tbody id="productBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="productEmpty">尚無產品設定，點選「＋ 新增產品」開始輸入</div>
+      </div>
+    </div>
+
+    <!-- 警示 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🚨 機台需求警示</div>
+      </div>
+      <div class="section-body">
+        <div class="alert-list" id="alertList"></div>
+      </div>
+    </div>
+
+    <!-- 彙總 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">📊 彙總總覽</div>
+      </div>
+      <div class="summary-grid" id="summaryGrid"></div>
+      <div class="total-bar" id="totalBar"></div>
+    </div>
+
+  </div><!-- /phase1 -->
+
+  <!-- ═══════════════ Phase 2 ═══════════════ -->
+  <div class="tab-panel" id="tab-phase2">
+    <div class="coming-soon">
+      <div class="cs-icon">🔧</div>
+      <h2>第二階段：機台限制條件</h2>
+      <p>設定特定機台禁止生產特定型號產品的限制規則，確保排程符合實際產線限制。</p>
+      <span class="badge-idle">🚧 開發中</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════ Phase 3 ═══════════════ -->
+  <div class="tab-panel" id="tab-phase3">
+    <div class="coming-soon">
+      <div class="cs-icon">🤖</div>
+      <h2>第三階段：機台配置建議</h2>
+      <p>根據產品需求與機台限制，自動推薦最佳機台配置方案，支援手動微調，並輸出配置彙整表。</p>
+      <span class="badge-idle">🚧 開發中</span>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ══════════════════════════════════════════════════════════
+// DEFAULT DATA
+// ══════════════════════════════════════════════════════════
+const DEFAULT_MACHINES = {
+  AC: { model:'ANDOC7H2',  units:['AC01','AC02','AC03','AC04','AC05','AC06'] },
+  AF: { model:'ANDOC7H3',  units:['AF01','AF02','AF03'] },
+  AK: { model:'ANDOC7_60', units:['AK01','AK02'] },
+  AM: { model:'ANDOD6M',   units:['AM05','AM06','AM07','AM08','AM09','AM10','AM11','AM12'] },
+  AN: { model:'ANDOD5',    units:['AN02','AN04','AN05','AN07','AN09','AN12','AN15','AN16',
+                                   'AN18','AN20','AN22','AN25','AN28','AN30','AN35','AN40','AN43','AN46'] },
+  AW: { model:'ANDOD6',    units:['AW04','AW06','AW07','AW08','AW10','AW12',
+                                   'AW14','AW16','AW17','AW18','AW19'] },
+  AQ: { model:'ANDODQ',    units:['AQ01'] },
+  AS: { model:'H5620',     units:['AS01'] },
+};
+
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+let machines = {};
+let products = [];
+let loaderRatio = 0.2;
+
+function loadState() {
+  try { machines = JSON.parse(localStorage.getItem('bi_machines')) || deepClone(DEFAULT_MACHINES); }
+  catch { machines = deepClone(DEFAULT_MACHINES); }
+  try { products = JSON.parse(localStorage.getItem('bi_products')) || []; }
+  catch { products = []; }
+  try { loaderRatio = parseFloat(localStorage.getItem('bi_loader_ratio')) || 0.2; }
+  catch { loaderRatio = 0.2; }
+  document.getElementById('loaderRatio').value = loaderRatio;
+}
+
+function saveState() {
+  localStorage.setItem('bi_machines', JSON.stringify(machines));
+  localStorage.setItem('bi_products', JSON.stringify(products));
+  localStorage.setItem('bi_loader_ratio', String(loaderRatio));
+}
+
+function saveAndRender() {
+  loaderRatio = parseFloat(document.getElementById('loaderRatio').value) || 0.2;
+  saveState();
+  renderAll();
+}
+
+function resetAll() {
+  if (!confirm('確定要重置所有資料？此操作無法復原。')) return;
+  machines = deepClone(DEFAULT_MACHINES);
+  products = [];
+  loaderRatio = 0.2;
+  document.getElementById('loaderRatio').value = 0.2;
+  saveState();
+  renderAll();
+}
+
+function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+// ══════════════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════════════
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ══════════════════════════════════════════════════════════
+// MACHINE MANAGEMENT
+// ══════════════════════════════════════════════════════════
+function renderMachines() {
+  const demand = calcDemandByModel();
+  const grid = document.getElementById('machineGrid');
+  grid.innerHTML = '';
+
+  for (const [series, data] of Object.entries(machines)) {
+    const d = demand[data.model] || 0;
+    const avail = data.units.length;
+    const isOver = d > avail;
+    const countColor = isOver ? 'var(--red)' : d > 0 ? 'var(--green)' : 'var(--text-muted)';
+
+    const card = document.createElement('div');
+    card.className = 'machine-card';
+    card.innerHTML = `
+      <div class="machine-card-header">
+        <div>
+          <div class="machine-series">${series}</div>
+          <div class="machine-model">${data.model}</div>
+        </div>
+        <div class="machine-count" style="color:${countColor}">
+          需求 ${d} / ${avail} 台
+        </div>
+      </div>
+      <div class="machine-card-body">
+        <div class="machine-units">
+          ${data.units.map(u => `
+            <div class="unit-tag">
+              ${u}
+              <button class="unit-del" onclick="deleteUnit('${series}','${u}')" title="刪除 ${u}">×</button>
+            </div>`).join('')}
+          ${data.units.length === 0 ? '<span style="font-size:11px;color:var(--text-muted)">尚無機台</span>' : ''}
+        </div>
+        <div class="add-unit-row">
+          <input class="add-unit-input" id="new-${series}" placeholder="${series}XX"
+            onkeydown="if(event.key==='Enter')addUnit('${series}')">
+          <button class="btn btn-secondary btn-sm" onclick="addUnit('${series}')">＋ 新增</button>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+  }
+}
+
+function addUnit(series) {
+  const input = document.getElementById('new-' + series);
+  const val = input.value.trim().toUpperCase();
+  if (!val) return;
+  if (machines[series].units.includes(val)) { alert(`${val} 已存在`); return; }
+  machines[series].units.push(val);
+  machines[series].units.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  input.value = '';
+  saveState();
+  renderAll();
+}
+
+function deleteUnit(series, unit) {
+  if (!confirm(`確定刪除機台 ${unit}？`)) return;
+  machines[series].units = machines[series].units.filter(u => u !== unit);
+  saveState();
+  renderAll();
+}
+
+// ══════════════════════════════════════════════════════════
+// CALCULATIONS
+// ══════════════════════════════════════════════════════════
+function calcProduct(p) {
+  const biTime     = parseFloat(p.biTime)      || 0;
+  const operTime   = parseFloat(p.operateTime) || 8;
+  const bibSet     = parseFloat(p.bibSet)      || 0;
+  const socket     = parseFloat(p.socket)      || 0;
+  const maskRate   = parseFloat(p.maskRate)    || 0;
+  const planOutput = parseFloat(p.planOutput)  || 0;
+
+  const turn     = biTime > 0 ? operTime / biTime : 0;
+  const bibK     = bibSet * socket / 1000;
+  const unitCap  = bibK * turn * maskRate;
+  const reqOven  = unitCap > 0 ? Math.ceil(planOutput / unitCap) : 0;
+  const reqLoader = Math.ceil(reqOven * loaderRatio);
+
+  return { turn, bibK, unitCap, reqOven, reqLoader };
+}
+
+function calcDemandByModel() {
+  const d = {};
+  for (const p of products) {
+    if (!p.ovenType) continue;
+    const c = calcProduct(p);
+    d[p.ovenType] = (d[p.ovenType] || 0) + c.reqOven;
+  }
+  return d;
+}
+
+// ══════════════════════════════════════════════════════════
+// PRODUCT TABLE
+// ══════════════════════════════════════════════════════════
+function getModels() {
+  return [...new Set(Object.values(machines).map(m => m.model))].sort();
+}
+
+function addProduct() {
+  products.push({
+    id: Date.now(),
+    ovenType: getModels()[0] || '',
+    package: '',
+    owner: '',
+    bibSet: 1,
+    biTime: 1,
+    operateTime: 8,
+    maskRate: 0.95,
+    socket: 1,
+    planOutput: 0,
+  });
+  saveState();
+  renderAll();
+}
+
+function deleteProduct(id) {
+  products = products.filter(p => p.id !== id);
+  saveState();
+  renderAll();
+}
+
+function updateField(id, field, value) {
+  const p = products.find(p => p.id === id);
+  if (!p) return;
+  p[field] = value;
+  saveState();
+  renderProductRow(id);
+  renderAlertsAndSummary();
+  renderMachines();
+}
+
+function renderProductRow(id) {
+  const p = products.find(p => p.id === id);
+  if (!p) return;
+  const calc = calcProduct(p);
+  const tr = document.getElementById('row-' + id);
+  if (!tr) return;
+  tr.querySelector('.c-turn').textContent  = fmt(calc.turn, 2);
+  tr.querySelector('.c-bibk').textContent  = fmt(calc.bibK, 3);
+  tr.querySelector('.c-ucap').textContent  = fmt(calc.unitCap, 3);
+  tr.querySelector('.c-oven').textContent  = calc.reqOven;
+  tr.querySelector('.c-loader').textContent = calc.reqLoader;
+}
+
+function fmt(v, d) { return isFinite(v) ? v.toFixed(d) : '—'; }
+
+function renderProducts() {
+  const models = getModels();
+  const tbody  = document.getElementById('productBody');
+  const empty  = document.getElementById('productEmpty');
+  const tbl    = document.getElementById('productTable');
+
+  if (products.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    tbl.style.display   = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  tbl.style.display   = '';
+
+  // Preserve scroll
+  const wrap = tbl.parentElement;
+  const scrollLeft = wrap.scrollLeft;
+
+  tbody.innerHTML = products.map((p, i) => {
+    const c = calcProduct(p);
+    const optStr = models.map(m => `<option value="${m}"${m===p.ovenType?' selected':''}>${m}</option>`).join('');
+    return `<tr id="row-${p.id}">
+      <td style="text-align:center;color:var(--text-muted)">${i+1}</td>
+      <td><select class="ti" style="min-width:105px" onchange="updateField(${p.id},'ovenType',this.value)">${optStr}</select></td>
+      <td><input class="ti" value="${esc(p.package)}" placeholder="96B" style="min-width:60px" oninput="updateField(${p.id},'package',this.value)"></td>
+      <td><input class="ti" value="${esc(p.owner)}"   placeholder="客戶" style="min-width:55px" oninput="updateField(${p.id},'owner',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.bibSet}"      min="0" step="1"    style="min-width:56px" oninput="updateField(${p.id},'bibSet',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.biTime}"      min="0.1" step="0.5" style="min-width:56px" oninput="updateField(${p.id},'biTime',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.operateTime}" min="0" step="0.5"  style="min-width:56px" oninput="updateField(${p.id},'operateTime',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.maskRate}"    min="0" max="1" step="0.01" style="min-width:56px" oninput="updateField(${p.id},'maskRate',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.socket}"      min="1" step="1"    style="min-width:56px" oninput="updateField(${p.id},'socket',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.planOutput}"  min="0" step="1"    style="min-width:64px" oninput="updateField(${p.id},'planOutput',this.value)"></td>
+      <td class="calc c-turn"  style="text-align:right">${fmt(c.turn,2)}</td>
+      <td class="calc c-bibk"  style="text-align:right">${fmt(c.bibK,3)}</td>
+      <td class="calc c-ucap"  style="text-align:right">${fmt(c.unitCap,3)}</td>
+      <td class="calc-hi c-oven"   style="text-align:right">${c.reqOven}</td>
+      <td class="calc c-loader" style="text-align:right">${c.reqLoader}</td>
+      <td style="text-align:center"><button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  wrap.scrollLeft = scrollLeft;
+}
+
+function esc(s) { return (s||'').replace(/"/g,'&quot;'); }
+
+// ══════════════════════════════════════════════════════════
+// ALERTS & SUMMARY
+// ══════════════════════════════════════════════════════════
+function renderAlertsAndSummary() {
+  const demand = calcDemandByModel();
+
+  // model → { series, avail }
+  const modelInfo = {};
+  for (const [series, data] of Object.entries(machines)) {
+    modelInfo[data.model] = { series, avail: data.units.length };
+  }
+
+  const uniqueModels = [...new Set(Object.values(machines).map(m => m.model))].sort();
+
+  // ── Alerts ──
+  const alertList = document.getElementById('alertList');
+  alertList.innerHTML = '';
+
+  if (uniqueModels.length === 0) {
+    alertList.innerHTML = '<div style="color:var(--text-muted);padding:8px">尚無機台資料</div>';
+  } else {
+    for (const model of uniqueModels) {
+      const info = modelInfo[model];
+      const d    = demand[model] || 0;
+      const item = document.createElement('div');
+
+      if (d === 0) {
+        item.className = 'alert-idle';
+        item.innerHTML = `⚪ <strong>${info.series} (${model})</strong>：目前無需求 / 可用 ${info.avail} 台`;
+      } else if (d > info.avail) {
+        item.className = 'alert-over';
+        item.innerHTML = `🚨 <strong>${info.series} (${model})</strong>：需求 <strong>${d}</strong> 台，上限 <strong>${info.avail}</strong> 台，
+          <strong style="color:#ff6b6b">超出 ${d - info.avail} 台</strong>`;
+      } else {
+        item.className = 'alert-ok';
+        item.innerHTML = `✅ <strong>${info.series} (${model})</strong>：需求 ${d} 台 / 可用 ${info.avail} 台`;
+      }
+      alertList.appendChild(item);
+    }
+  }
+
+  // ── Summary cards ──
+  const summaryGrid = document.getElementById('summaryGrid');
+  summaryGrid.innerHTML = '';
+  for (const model of uniqueModels) {
+    const info   = modelInfo[model];
+    const d      = demand[model] || 0;
+    const isOver = d > info.avail;
+    const isIdle = d === 0;
+
+    const card = document.createElement('div');
+    card.className = `sum-card${isOver?' over':d>0?' ok':''}`;
+    const badge = isOver
+      ? `<span class="badge-over">⚠ 超限</span>`
+      : isIdle
+        ? `<span class="badge-neutral">閒置</span>`
+        : `<span class="badge-ok">✓ OK</span>`;
+    const reqColor = isOver ? 'var(--red)' : isIdle ? 'var(--text-muted)' : 'var(--green)';
+
+    card.innerHTML = `
+      <div class="sum-top">
+        <span class="sum-series">${info.series}</span>
+        ${badge}
+      </div>
+      <div class="sum-nums">
+        <span class="sum-req" style="color:${reqColor}">${d}</span>
+        <span class="sum-avail">/ ${info.avail} 台</span>
+      </div>
+      <div class="sum-model">${model}</div>`;
+    summaryGrid.appendChild(card);
+  }
+
+  // ── Total bar ──
+  const totalOutput = products.reduce((s,p) => s + (parseFloat(p.planOutput)||0), 0);
+  const totalOven   = Object.values(demand).reduce((a,b) => a+b, 0);
+  const totalLoader = products.reduce((s,p) => s + calcProduct(p).reqLoader, 0);
+  const overCount   = uniqueModels.filter(m => (demand[m]||0) > (modelInfo[m]?.avail||0)).length;
+
+  document.getElementById('totalBar').innerHTML = `
+    <div class="total-item">
+      <div class="total-label">Plan Output 合計</div>
+      <div class="total-value">${totalOutput.toLocaleString()}<span class="total-unit"> K</span></div>
+    </div>
+    <div class="vdiv"></div>
+    <div class="total-item">
+      <div class="total-label">總需求 Oven</div>
+      <div class="total-value">${totalOven}<span class="total-unit"> 台</span></div>
+    </div>
+    <div class="total-item">
+      <div class="total-label">總需求 Loader</div>
+      <div class="total-value">${totalLoader}<span class="total-unit"> 台</span></div>
+    </div>
+    <div class="vdiv"></div>
+    <div class="total-item">
+      <div class="total-label">超限型號</div>
+      <div class="total-value" style="color:${overCount>0?'var(--red)':'var(--green)'}">${overCount}<span class="total-unit"> 項</span></div>
+    </div>
+    <div class="total-item">
+      <div class="total-label">產品筆數</div>
+      <div class="total-value">${products.length}<span class="total-unit"> 筆</span></div>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+// EXPORT CSV
+// ══════════════════════════════════════════════════════════
+function exportCSV() {
+  const headers = ['#','Oven Type','Package','Owner','BIB Set','BI Time(h)','Operate Time(h)',
+    'Mask Rate','Socket(ea)','Plan Output(K)','Turn','BIB(K)','單台產能(K)','需求Oven','需求Loader'];
+  const rows = products.map((p, i) => {
+    const c = calcProduct(p);
+    return [i+1, p.ovenType, p.package, p.owner, p.bibSet, p.biTime, p.operateTime,
+      p.maskRate, p.socket, p.planOutput,
+      c.turn.toFixed(2), c.bibK.toFixed(3), c.unitCap.toFixed(3), c.reqOven, c.reqLoader];
+  });
+  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const blob = new Blob(['\ufeff'+csv], { type:'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `BI產能計算_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// ══════════════════════════════════════════════════════════
+// RENDER ALL
+// ══════════════════════════════════════════════════════════
+function renderAll() {
+  renderMachines();
+  renderProducts();
+  renderAlertsAndSummary();
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+loadState();
+renderAll();
+</script>
+</body>
+</html>
