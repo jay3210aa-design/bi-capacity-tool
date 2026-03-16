@@ -195,18 +195,6 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
       </div>
     </div>
 
-    <!-- 全域參數 -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-title">⚙️ 全域參數</div>
-      </div>
-      <div class="settings-row">
-        <span class="settings-label">Loader ÷ Oven 比例：</span>
-        <input class="settings-input" type="number" id="loaderRatio" min="0" max="5" step="0.01" value="0.2" oninput="saveAndRender()">
-        <span style="font-size:12px;color:var(--text-muted)">需求 Loader 數 = CEILING( 需求 Oven 數 × 此比例 )</span>
-      </div>
-    </div>
-
     <!-- 產品設定 -->
     <div class="section">
       <div class="section-header">
@@ -222,17 +210,19 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
                 <th>Oven Type</th>
                 <th>Package</th>
                 <th>Owner</th>
-                <th>BIB Set</th>
-                <th>BI Time<br><span style="font-weight:400;text-transform:none">(hrs)</span></th>
-                <th>Operate<br><span style="font-weight:400;text-transform:none">(hrs)</span></th>
-                <th>Mask Rate</th>
-                <th>Socket<br><span style="font-weight:400;text-transform:none">(ea)</span></th>
-                <th>Plan Output<br><span style="font-weight:400;text-transform:none">(K)</span></th>
-                <th title="Operate ÷ BI Time">Turn</th>
-                <th title="BIB Set × Socket ÷ 1000">BIB(K)</th>
-                <th title="BIB(K) × Turn × Mask Rate">單台產能(K)</th>
-                <th title="CEILING( Output ÷ 單台產能 )">需求<br>Oven</th>
-                <th title="CEILING( Oven × Loader比例 )">需求<br>Loader</th>
+                <th title="使用者輸入">BIB<br><span style="font-weight:400;text-transform:none">(set)</span></th>
+                <th title="使用者輸入">BI Time<br><span style="font-weight:400;text-transform:none">(hrs)</span></th>
+                <th title="使用者輸入">Operate Time<br><span style="font-weight:400;text-transform:none">(hrs)</span></th>
+                <th title="使用者輸入">Mask Rate</th>
+                <th title="使用者輸入">Socket<br><span style="font-weight:400;text-transform:none">(ea)</span></th>
+                <th title="使用者輸入">BIB Type</th>
+                <th title="公式：BIB(set)×(ANDO?48:60)×0.92">BIB<br><span style="font-weight:400;text-transform:none">(ea)</span></th>
+                <th title="公式：BIB(set)×Socket×(48或60)×0.92×24÷(BI+Oper)÷1000×MaskRate">Plan Output<br><span style="font-weight:400;text-transform:none">(K)</span></th>
+                <th title="公式：BIB(set)×24÷(BI+Oper)÷(24/4)">Loader</th>
+                <th title="公式：BIB(set)×(BI+3.15)÷(BI+Oper)">Oven</th>
+                <th title="公式：BIB(set)×24÷(BI+Oper)">Turn</th>
+                <th title="公式：Turn÷2÷10">Oven OP</th>
+                <th title="公式：Loader÷3">Loader OP</th>
                 <th style="width:38px"></th>
               </tr>
             </thead>
@@ -308,26 +298,20 @@ const DEFAULT_MACHINES = {
 // ══════════════════════════════════════════════════════════
 let machines = {};
 let products = [];
-let loaderRatio = 0.2;
 
 function loadState() {
   try { machines = JSON.parse(localStorage.getItem('bi_machines')) || deepClone(DEFAULT_MACHINES); }
   catch { machines = deepClone(DEFAULT_MACHINES); }
   try { products = JSON.parse(localStorage.getItem('bi_products')) || []; }
   catch { products = []; }
-  try { loaderRatio = parseFloat(localStorage.getItem('bi_loader_ratio')) || 0.2; }
-  catch { loaderRatio = 0.2; }
-  document.getElementById('loaderRatio').value = loaderRatio;
 }
 
 function saveState() {
   localStorage.setItem('bi_machines', JSON.stringify(machines));
   localStorage.setItem('bi_products', JSON.stringify(products));
-  localStorage.setItem('bi_loader_ratio', String(loaderRatio));
 }
 
 function saveAndRender() {
-  loaderRatio = parseFloat(document.getElementById('loaderRatio').value) || 0.2;
   saveState();
   renderAll();
 }
@@ -336,8 +320,6 @@ function resetAll() {
   if (!confirm('確定要重置所有資料？此操作無法復原。')) return;
   machines = deepClone(DEFAULT_MACHINES);
   products = [];
-  loaderRatio = 0.2;
-  document.getElementById('loaderRatio').value = 0.2;
   saveState();
   renderAll();
 }
@@ -422,20 +404,37 @@ function deleteUnit(series, unit) {
 // CALCULATIONS
 // ══════════════════════════════════════════════════════════
 function calcProduct(p) {
-  const biTime     = parseFloat(p.biTime)      || 0;
-  const operTime   = parseFloat(p.operateTime) || 8;
-  const bibSet     = parseFloat(p.bibSet)      || 0;
-  const socket     = parseFloat(p.socket)      || 0;
-  const maskRate   = parseFloat(p.maskRate)    || 0;
-  const planOutput = parseFloat(p.planOutput)  || 0;
+  const bibSet   = parseFloat(p.bibSet)      || 0;
+  const biTime   = parseFloat(p.biTime)      || 0;
+  const operTime = parseFloat(p.operateTime) || 8;
+  const maskRate = parseFloat(p.maskRate)    || 0;
+  const socket   = parseFloat(p.socket)      || 0;
+  const isAndo   = (p.ovenType || '').startsWith('ANDO');
+  const slotBase = isAndo ? 48 : 60;
+  const sum      = biTime + operTime;
 
-  const turn     = biTime > 0 ? operTime / biTime : 0;
-  const bibK     = bibSet * socket / 1000;
-  const unitCap  = bibK * turn * maskRate;
-  const reqOven  = unitCap > 0 ? Math.ceil(planOutput / unitCap) : 0;
-  const reqLoader = Math.ceil(reqOven * loaderRatio);
+  // BIB(ea) = BIB(set) × (48 or 60) × 0.92
+  const bibEa = bibSet * slotBase * 0.92;
 
-  return { turn, bibK, unitCap, reqOven, reqLoader };
+  // Plan Output(K) = BIB(set) × Socket × (48or60) × 0.92 × 24 ÷ (BI+Oper) ÷ 1000 × MaskRate
+  const planOutput = sum > 0 ? bibSet * socket * slotBase * 0.92 * 24 / sum / 1000 * maskRate : 0;
+
+  // Loader = BIB(set) × 24 ÷ (BI+Oper) ÷ (24/4)
+  const loader = sum > 0 ? bibSet * 24 / sum / (24 / 4) : 0;
+
+  // Oven = BIB(set) × (BI+3.15) ÷ (BI+Oper)
+  const oven = sum > 0 ? bibSet * (biTime + 3.15) / sum : 0;
+
+  // Turn = BIB(set) × 24 ÷ (BI+Oper)
+  const turn = sum > 0 ? bibSet * 24 / sum : 0;
+
+  // Oven OP = Turn ÷ 2 ÷ 10
+  const ovenOp = turn / 2 / 10;
+
+  // Loader OP = Loader ÷ 3
+  const loaderOp = loader / 3;
+
+  return { bibEa, planOutput, loader, oven, turn, ovenOp, loaderOp };
 }
 
 function calcDemandByModel() {
@@ -443,9 +442,19 @@ function calcDemandByModel() {
   for (const p of products) {
     if (!p.ovenType) continue;
     const c = calcProduct(p);
-    d[p.ovenType] = (d[p.ovenType] || 0) + c.reqOven;
+    // 用 Oven 欄位累加需求台數（取ceiling）
+    const series = getSeriesByModel(p.ovenType);
+    if (!series) continue;
+    d[p.ovenType] = (d[p.ovenType] || 0) + Math.ceil(c.oven);
   }
   return d;
+}
+
+function getSeriesByModel(model) {
+  for (const [series, data] of Object.entries(machines)) {
+    if (data.model === model) return series;
+  }
+  return null;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -458,7 +467,7 @@ function getModels() {
 function addProduct() {
   products.push({
     id: Date.now(),
-    ovenType: getModels()[0] || '',
+    ovenType: 'ANDOC7H2',
     package: '',
     owner: '',
     bibSet: 1,
@@ -466,7 +475,7 @@ function addProduct() {
     operateTime: 8,
     maskRate: 0.95,
     socket: 1,
-    planOutput: 0,
+    bibType: '',
   });
   saveState();
   renderAll();
@@ -491,20 +500,22 @@ function updateField(id, field, value) {
 function renderProductRow(id) {
   const p = products.find(p => p.id === id);
   if (!p) return;
-  const calc = calcProduct(p);
+  const c = calcProduct(p);
   const tr = document.getElementById('row-' + id);
   if (!tr) return;
-  tr.querySelector('.c-turn').textContent  = fmt(calc.turn, 2);
-  tr.querySelector('.c-bibk').textContent  = fmt(calc.bibK, 3);
-  tr.querySelector('.c-ucap').textContent  = fmt(calc.unitCap, 3);
-  tr.querySelector('.c-oven').textContent  = calc.reqOven;
-  tr.querySelector('.c-loader').textContent = calc.reqLoader;
+  tr.querySelector('.c-bibea').textContent    = fmt(c.bibEa, 1);
+  tr.querySelector('.c-output').textContent   = fmt(c.planOutput, 1);
+  tr.querySelector('.c-loader').textContent   = fmt(c.loader, 1);
+  tr.querySelector('.c-oven').textContent     = fmt(c.oven, 1);
+  tr.querySelector('.c-turn').textContent     = fmt(c.turn, 1);
+  tr.querySelector('.c-ovenop').textContent   = fmt(c.ovenOp, 1);
+  tr.querySelector('.c-loaderop').textContent = fmt(c.loaderOp, 1);
 }
 
 function fmt(v, d) { return isFinite(v) ? v.toFixed(d) : '—'; }
 
 function renderProducts() {
-  const models = getModels();
+  const models = ['ANDOC7H2','ANDOC7H3','ANDOC7_60','ANDOD6M','ANDOD5','ANDOD6','ANDODQ','H5620'];
   const tbody  = document.getElementById('productBody');
   const empty  = document.getElementById('productEmpty');
   const tbl    = document.getElementById('productTable');
@@ -518,7 +529,6 @@ function renderProducts() {
   empty.style.display = 'none';
   tbl.style.display   = '';
 
-  // Preserve scroll
   const wrap = tbl.parentElement;
   const scrollLeft = wrap.scrollLeft;
 
@@ -527,20 +537,22 @@ function renderProducts() {
     const optStr = models.map(m => `<option value="${m}"${m===p.ovenType?' selected':''}>${m}</option>`).join('');
     return `<tr id="row-${p.id}">
       <td style="text-align:center;color:var(--text-muted)">${i+1}</td>
-      <td><select class="ti" style="min-width:105px" onchange="updateField(${p.id},'ovenType',this.value)">${optStr}</select></td>
-      <td><input class="ti" value="${esc(p.package)}" placeholder="96B" style="min-width:60px" oninput="updateField(${p.id},'package',this.value)"></td>
+      <td><select class="ti" style="min-width:110px" onchange="updateField(${p.id},'ovenType',this.value)">${optStr}</select></td>
+      <td><input class="ti" value="${esc(p.package)}" placeholder="96B"  style="min-width:60px" oninput="updateField(${p.id},'package',this.value)"></td>
       <td><input class="ti" value="${esc(p.owner)}"   placeholder="客戶" style="min-width:55px" oninput="updateField(${p.id},'owner',this.value)"></td>
-      <td><input class="ti" type="number" value="${p.bibSet}"      min="0" step="1"    style="min-width:56px" oninput="updateField(${p.id},'bibSet',this.value)"></td>
-      <td><input class="ti" type="number" value="${p.biTime}"      min="0.1" step="0.5" style="min-width:56px" oninput="updateField(${p.id},'biTime',this.value)"></td>
-      <td><input class="ti" type="number" value="${p.operateTime}" min="0" step="0.5"  style="min-width:56px" oninput="updateField(${p.id},'operateTime',this.value)"></td>
-      <td><input class="ti" type="number" value="${p.maskRate}"    min="0" max="1" step="0.01" style="min-width:56px" oninput="updateField(${p.id},'maskRate',this.value)"></td>
-      <td><input class="ti" type="number" value="${p.socket}"      min="1" step="1"    style="min-width:56px" oninput="updateField(${p.id},'socket',this.value)"></td>
-      <td><input class="ti" type="number" value="${p.planOutput}"  min="0" step="1"    style="min-width:64px" oninput="updateField(${p.id},'planOutput',this.value)"></td>
-      <td class="calc c-turn"  style="text-align:right">${fmt(c.turn,2)}</td>
-      <td class="calc c-bibk"  style="text-align:right">${fmt(c.bibK,3)}</td>
-      <td class="calc c-ucap"  style="text-align:right">${fmt(c.unitCap,3)}</td>
-      <td class="calc-hi c-oven"   style="text-align:right">${c.reqOven}</td>
-      <td class="calc c-loader" style="text-align:right">${c.reqLoader}</td>
+      <td><input class="ti" type="number" value="${p.bibSet}"      min="0"   step="0.1"  style="min-width:62px" oninput="updateField(${p.id},'bibSet',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.biTime}"      min="0.1" step="0.5"  style="min-width:62px" oninput="updateField(${p.id},'biTime',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.operateTime}" min="0"   step="0.5"  style="min-width:62px" oninput="updateField(${p.id},'operateTime',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.maskRate}"    min="0"   max="1" step="0.01" style="min-width:62px" oninput="updateField(${p.id},'maskRate',this.value)"></td>
+      <td><input class="ti" type="number" value="${p.socket}"      min="1"   step="1"    style="min-width:62px" oninput="updateField(${p.id},'socket',this.value)"></td>
+      <td><input class="ti" value="${esc(p.bibType||'')}" placeholder="G,B,P" style="min-width:70px" oninput="updateField(${p.id},'bibType',this.value)"></td>
+      <td class="calc c-bibea"     style="text-align:right;background:var(--bg-secondary)">${fmt(c.bibEa,1)}</td>
+      <td class="calc-hi c-output" style="text-align:right;background:var(--bg-secondary)">${fmt(c.planOutput,1)}</td>
+      <td class="calc c-loader"    style="text-align:right;background:var(--bg-secondary)">${fmt(c.loader,1)}</td>
+      <td class="calc-hi c-oven"   style="text-align:right;background:var(--bg-secondary)">${fmt(c.oven,1)}</td>
+      <td class="calc c-turn"      style="text-align:right;background:var(--bg-secondary)">${fmt(c.turn,1)}</td>
+      <td class="calc c-ovenop"    style="text-align:right;background:var(--bg-secondary)">${fmt(c.ovenOp,1)}</td>
+      <td class="calc c-loaderop"  style="text-align:right;background:var(--bg-secondary)">${fmt(c.loaderOp,1)}</td>
       <td style="text-align:center"><button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">✕</button></td>
     </tr>`;
   }).join('');
@@ -600,6 +612,17 @@ function renderAlertsAndSummary() {
     const isOver = d > info.avail;
     const isIdle = d === 0;
 
+    // 找出配置到此機型的產品
+    const assigned = products.filter(p => p.ovenType === model);
+    const assignedRows = assigned.map(p => {
+      const c = calcProduct(p);
+      return `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px;">
+        <span style="color:var(--text-secondary);font-family:var(--mono);min-width:32px">${p.owner||'—'}</span>
+        <span style="color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.package||'—'}</span>
+        <span style="color:var(--accent);font-family:var(--mono);white-space:nowrap">${fmt(c.oven,1)}</span>
+      </div>`;
+    }).join('');
+
     const card = document.createElement('div');
     card.className = `sum-card${isOver?' over':d>0?' ok':''}`;
     const badge = isOver
@@ -618,20 +641,27 @@ function renderAlertsAndSummary() {
         <span class="sum-req" style="color:${reqColor}">${d}</span>
         <span class="sum-avail">/ ${info.avail} 台</span>
       </div>
-      <div class="sum-model">${model}</div>`;
+      <div class="sum-model">${model}</div>
+      ${assigned.length > 0 ? `
+      <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">
+          <span>Owner</span><span>Package</span><span>Oven</span>
+        </div>
+        ${assignedRows}
+      </div>` : ''}`;
     summaryGrid.appendChild(card);
   }
 
   // ── Total bar ──
-  const totalOutput = products.reduce((s,p) => s + (parseFloat(p.planOutput)||0), 0);
+  const totalOutput = products.reduce((s,p) => s + calcProduct(p).planOutput, 0);
   const totalOven   = Object.values(demand).reduce((a,b) => a+b, 0);
-  const totalLoader = products.reduce((s,p) => s + calcProduct(p).reqLoader, 0);
+  const totalLoader = products.reduce((s,p) => s + calcProduct(p).loader, 0);
   const overCount   = uniqueModels.filter(m => (demand[m]||0) > (modelInfo[m]?.avail||0)).length;
 
   document.getElementById('totalBar').innerHTML = `
     <div class="total-item">
       <div class="total-label">Plan Output 合計</div>
-      <div class="total-value">${totalOutput.toLocaleString()}<span class="total-unit"> K</span></div>
+      <div class="total-value">${totalOutput.toFixed(1)}<span class="total-unit"> K</span></div>
     </div>
     <div class="vdiv"></div>
     <div class="total-item">
@@ -640,7 +670,7 @@ function renderAlertsAndSummary() {
     </div>
     <div class="total-item">
       <div class="total-label">總需求 Loader</div>
-      <div class="total-value">${totalLoader}<span class="total-unit"> 台</span></div>
+      <div class="total-value">${totalLoader.toFixed(1)}<span class="total-unit"> 台</span></div>
     </div>
     <div class="vdiv"></div>
     <div class="total-item">
@@ -657,13 +687,14 @@ function renderAlertsAndSummary() {
 // EXPORT CSV
 // ══════════════════════════════════════════════════════════
 function exportCSV() {
-  const headers = ['#','Oven Type','Package','Owner','BIB Set','BI Time(h)','Operate Time(h)',
-    'Mask Rate','Socket(ea)','Plan Output(K)','Turn','BIB(K)','單台產能(K)','需求Oven','需求Loader'];
+  const headers = ['#','Oven Type','Package','Owner','BIB(set)','BI Time(hrs)','Operate Time(hrs)',
+    'Mask Rate','Socket(ea)','BIB Type','BIB(ea)','Plan Output(K)','Loader','Oven','Turn','Oven OP','Loader OP'];
   const rows = products.map((p, i) => {
     const c = calcProduct(p);
     return [i+1, p.ovenType, p.package, p.owner, p.bibSet, p.biTime, p.operateTime,
-      p.maskRate, p.socket, p.planOutput,
-      c.turn.toFixed(2), c.bibK.toFixed(3), c.unitCap.toFixed(3), c.reqOven, c.reqLoader];
+      p.maskRate, p.socket, p.bibType||'',
+      c.bibEa.toFixed(1), c.planOutput.toFixed(1), c.loader.toFixed(1),
+      c.oven.toFixed(1), c.turn.toFixed(1), c.ovenOp.toFixed(1), c.loaderOp.toFixed(1)];
   });
   const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
   const blob = new Blob(['\ufeff'+csv], { type:'text/csv;charset=utf-8;' });
