@@ -142,6 +142,12 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
 /* ── Empty ── */
 .empty{text-align:center;padding:36px;color:var(--text-muted);font-size:13px}
 
+/* ── Drag and Drop ── */
+tr.dragging{opacity:.4;background:var(--bg-hover)}
+tr.drag-over{border-top:2px solid var(--accent)}
+.drag-handle{cursor:grab;color:var(--text-muted);font-size:14px;padding:0 4px;user-select:none}
+.drag-handle:active{cursor:grabbing}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--bg-primary)}
@@ -167,6 +173,8 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
     <div class="header-sub">Burn-In 生產線 · 半導體測試</div>
   </div>
   <div class="header-right">
+    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('csvImport').click()">⬆ 匯入 CSV</button>
+    <input type="file" id="csvImport" accept=".csv" style="display:none" onchange="importCSV(this)">
     <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ 匯出 CSV</button>
     <button class="btn btn-danger btn-sm" onclick="resetAll()">🔄 重置資料</button>
   </div>
@@ -206,6 +214,7 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
           <table id="productTable">
             <thead>
               <tr>
+                <th style="width:20px"></th>
                 <th style="width:28px;text-align:center">#</th>
                 <th>Oven Type</th>
                 <th>Package</th>
@@ -438,14 +447,16 @@ function calcProduct(p) {
 }
 
 function calcDemandByModel() {
-  const d = {};
+  const raw = {};
   for (const p of products) {
     if (!p.ovenType) continue;
     const c = calcProduct(p);
-    // 用 Oven 欄位累加需求台數（取ceiling）
-    const series = getSeriesByModel(p.ovenType);
-    if (!series) continue;
-    d[p.ovenType] = (d[p.ovenType] || 0) + Math.ceil(c.oven);
+    raw[p.ovenType] = (raw[p.ovenType] || 0) + c.oven;
+  }
+  // 各機型 oven 值加總後再取 CEILING
+  const d = {};
+  for (const [model, total] of Object.entries(raw)) {
+    d[model] = Math.ceil(total);
   }
   return d;
 }
@@ -535,7 +546,8 @@ function renderProducts() {
   tbody.innerHTML = products.map((p, i) => {
     const c = calcProduct(p);
     const optStr = models.map(m => `<option value="${m}"${m===p.ovenType?' selected':''}>${m}</option>`).join('');
-    return `<tr id="row-${p.id}">
+    return `<tr id="row-${p.id}" draggable="true" data-id="${p.id}">
+      <td style="text-align:center"><span class="drag-handle" title="拖曳排序">⠿</span></td>
       <td style="text-align:center;color:var(--text-muted)">${i+1}</td>
       <td><select class="ti" style="min-width:110px" onchange="updateField(${p.id},'ovenType',this.value)">${optStr}</select></td>
       <td><input class="ti" value="${esc(p.package)}" placeholder="96B"  style="min-width:60px" oninput="updateField(${p.id},'package',this.value)"></td>
@@ -558,6 +570,36 @@ function renderProducts() {
   }).join('');
 
   wrap.scrollLeft = scrollLeft;
+
+  // 拖曳排序事件
+  let dragSrcId = null;
+  tbody.querySelectorAll('tr[draggable]').forEach(tr => {
+    tr.addEventListener('dragstart', e => {
+      dragSrcId = parseInt(tr.dataset.id);
+      tr.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    tr.addEventListener('dragend', () => {
+      tr.classList.remove('dragging');
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+    });
+    tr.addEventListener('dragover', e => {
+      e.preventDefault();
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      if (parseInt(tr.dataset.id) !== dragSrcId) tr.classList.add('drag-over');
+    });
+    tr.addEventListener('drop', e => {
+      e.preventDefault();
+      const targetId = parseInt(tr.dataset.id);
+      if (targetId === dragSrcId) return;
+      const srcIdx = products.findIndex(p => p.id === dragSrcId);
+      const tgtIdx = products.findIndex(p => p.id === targetId);
+      const [moved] = products.splice(srcIdx, 1);
+      products.splice(tgtIdx, 0, moved);
+      saveState();
+      renderAll();
+    });
+  });
 }
 
 function esc(s) { return (s||'').replace(/"/g,'&quot;'); }
@@ -681,6 +723,70 @@ function renderAlertsAndSummary() {
       <div class="total-label">產品筆數</div>
       <div class="total-value">${products.length}<span class="total-unit"> 筆</span></div>
     </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+// IMPORT CSV
+// ══════════════════════════════════════════════════════════
+function importCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.replace(/\r/g, '').split('\n').filter(l => l.trim());
+    if (lines.length < 2) { alert('CSV 內無資料'); return; }
+
+    // 解析 header，對應欄位名稱
+    const parseRow = line => line.split(',').map(v => v.replace(/^"|"$/g, '').trim());
+    const headers = parseRow(lines[0]).map(h => h.toLowerCase());
+
+    const col = name => headers.indexOf(name);
+    const idxOvenType   = col('oven type');
+    const idxPackage    = col('package');
+    const idxOwner      = col('owner');
+    const idxBibSet     = col('bib(set)');
+    const idxBiTime     = col('bi time(hrs)');
+    const idxOperTime   = col('operate time(hrs)');
+    const idxMaskRate   = col('mask rate');
+    const idxSocket     = col('socket(ea)');
+    const idxBibType    = col('bib type');
+
+    if (idxOvenType === -1) { alert('CSV 格式不符，找不到 Oven Type 欄位'); return; }
+
+    const imported = [];
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseRow(lines[i]);
+      if (!row[idxOvenType]) continue;
+      imported.push({
+        id: Date.now() + i,
+        ovenType:    row[idxOvenType]  || 'ANDOC7H2',
+        package:     idxPackage  >= 0 ? row[idxPackage]  : '',
+        owner:       idxOwner    >= 0 ? row[idxOwner]    : '',
+        bibSet:      idxBibSet   >= 0 ? parseFloat(row[idxBibSet])   || 1 : 1,
+        biTime:      idxBiTime   >= 0 ? parseFloat(row[idxBiTime])   || 1 : 1,
+        operateTime: idxOperTime >= 0 ? parseFloat(row[idxOperTime]) || 8 : 8,
+        maskRate:    idxMaskRate >= 0 ? parseFloat(row[idxMaskRate]) || 0.95 : 0.95,
+        socket:      idxSocket   >= 0 ? parseFloat(row[idxSocket])   || 1 : 1,
+        bibType:     idxBibType  >= 0 ? row[idxBibType]  : '',
+      });
+    }
+
+    if (imported.length === 0) { alert('CSV 內無有效資料列'); return; }
+
+    if (products.length > 0) {
+      const choice = confirm(`匯入 ${imported.length} 筆資料。\n確定 → 取代現有資料\n取消 → 附加到現有資料`);
+      if (choice) products = imported;
+      else products = [...products, ...imported];
+    } else {
+      products = imported;
+    }
+
+    saveState();
+    renderAll();
+    input.value = '';
+    alert(`成功匯入 ${imported.length} 筆產品資料`);
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
 // ══════════════════════════════════════════════════════════
