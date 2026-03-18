@@ -142,11 +142,10 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
 /* ── Empty ── */
 .empty{text-align:center;padding:36px;color:var(--text-muted);font-size:13px}
 
-/* ── Drag and Drop ── */
-tr.dragging{opacity:.4;background:var(--bg-hover)}
-tr.drag-over{border-top:2px solid var(--accent)}
-.drag-handle{cursor:grab;color:var(--text-muted);font-size:14px;padding:0 4px;user-select:none}
-.drag-handle:active{cursor:grabbing}
+/* ── Phase 2 Query Card ── */
+.constraint-query-card{display:grid;grid-template-columns:1fr 1fr 1fr 2fr;gap:10px;align-items:start;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:12px 16px}
+.constraint-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+@media(max-width:768px){.constraint-query-card{grid-template-columns:1fr 1fr}}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -173,8 +172,6 @@ tr.drag-over{border-top:2px solid var(--accent)}
     <div class="header-sub">Burn-In 生產線 · 半導體測試</div>
   </div>
   <div class="header-right">
-    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('csvImport').click()">⬆ 匯入 CSV</button>
-    <input type="file" id="csvImport" accept=".csv" style="display:none" onchange="importCSV(this)">
     <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ 匯出 CSV</button>
     <button class="btn btn-danger btn-sm" onclick="resetAll()">🔄 重置資料</button>
   </div>
@@ -183,7 +180,7 @@ tr.drag-over{border-top:2px solid var(--accent)}
 <!-- ───── Tabs ───── -->
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('phase1',this)">⚙️ 第一階段：產能計算</button>
-  <button class="tab-btn" onclick="switchTab('phase2',this)">🔒 第二階段：機台限制 <span class="tab-badge">開發中</span></button>
+  <button class="tab-btn" onclick="switchTab('phase2',this)">🚫 第二階段：機台限制</button>
   <button class="tab-btn" onclick="switchTab('phase3',this)">🔒 第三階段：配置建議 <span class="tab-badge">開發中</span></button>
 </div>
 
@@ -214,7 +211,6 @@ tr.drag-over{border-top:2px solid var(--accent)}
           <table id="productTable">
             <thead>
               <tr>
-                <th style="width:20px"></th>
                 <th style="width:28px;text-align:center">#</th>
                 <th>Oven Type</th>
                 <th>Package</th>
@@ -265,12 +261,86 @@ tr.drag-over{border-top:2px solid var(--accent)}
 
   <!-- ═══════════════ Phase 2 ═══════════════ -->
   <div class="tab-panel" id="tab-phase2">
-    <div class="coming-soon">
-      <div class="cs-icon">🔧</div>
-      <h2>第二階段：機台限制條件</h2>
-      <p>設定特定機台禁止生產特定型號產品的限制規則，確保排程符合實際產線限制。</p>
-      <span class="badge-idle">🚧 開發中</span>
+
+    <!-- 規則管理 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🚫 機台限制規則 <span class="tab-badge" id="constraintCount">0 條</span></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="exportConstraintsCSV()">⬇ 匯出 CSV</button>
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer">⬆ 匯入 CSV<input type="file" accept=".csv" style="display:none" onchange="importConstraintsCSV(this)"></label>
+        </div>
+      </div>
+      <!-- 新增表單 -->
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg-secondary)">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;color:var(--text-muted)">Unit *</label>
+            <select class="ti" id="nc-unit" style="min-width:90px"></select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;color:var(--text-muted)">Package（空=不限）</label>
+            <input class="ti" id="nc-package" placeholder="96B" style="min-width:100px">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;color:var(--text-muted)">Owner（空=不限）</label>
+            <input class="ti" id="nc-owner" placeholder="AB" style="min-width:80px">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;color:var(--text-muted)">Part No（空=不限，支援 *）</label>
+            <input class="ti" id="nc-partno" placeholder="GAA108*" style="min-width:120px">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;color:var(--text-muted)">備註</label>
+            <input class="ti" id="nc-note" placeholder="選填說明" style="min-width:120px">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addConstraint()" style="align-self:flex-end">＋ 新增規則</button>
+        </div>
+      </div>
+      <!-- 規則表格 -->
+      <div class="table-wrap">
+        <table id="constraintTable" style="display:none">
+          <thead>
+            <tr>
+              <th style="width:28px;text-align:center">#</th>
+              <th>Unit</th>
+              <th>Package</th>
+              <th>Owner</th>
+              <th>Part No</th>
+              <th>備註</th>
+              <th style="width:110px"></th>
+            </tr>
+          </thead>
+          <tbody id="constraintBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="constraintEmpty">尚無限制規則，請使用上方表單新增</div>
     </div>
+
+    <!-- 機台查詢 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🔍 機台查詢</div>
+        <span style="font-size:12px;color:var(--text-muted)">查詢特定機台的所有限制條件</span>
+      </div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg-secondary)">
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="font-size:11px;color:var(--text-muted)">機台編號</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input class="ti" id="q-unit-input" placeholder="輸入如 AC01" style="min-width:100px" onkeydown="if(event.key==='Enter')queryMachine()">
+              <span style="font-size:11px;color:var(--text-muted)">或</span>
+              <select class="ti" id="q-unit-select" style="min-width:100px" onchange="document.getElementById('q-unit-input').value=this.value"></select>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="queryMachine()" style="align-self:flex-end">🔍 查詢</button>
+        </div>
+      </div>
+      <div id="queryResult" style="padding:18px">
+        <div class="empty">請輸入或選取機台編號後點擊查詢</div>
+      </div>
+    </div>
+
   </div>
 
   <!-- ═══════════════ Phase 3 ═══════════════ -->
@@ -307,6 +377,7 @@ const DEFAULT_MACHINES = {
 // ══════════════════════════════════════════════════════════
 let machines = {};
 let products = [];
+let constraints = [];
 
 function loadState() {
   try { machines = JSON.parse(localStorage.getItem('bi_machines')) || deepClone(DEFAULT_MACHINES); }
@@ -343,6 +414,7 @@ function switchTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
+  if (name === 'phase2') populateUnitDropdowns();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -447,16 +519,14 @@ function calcProduct(p) {
 }
 
 function calcDemandByModel() {
-  const raw = {};
+  const d = {};
   for (const p of products) {
     if (!p.ovenType) continue;
     const c = calcProduct(p);
-    raw[p.ovenType] = (raw[p.ovenType] || 0) + c.oven;
-  }
-  // 各機型 oven 值加總後再取 CEILING
-  const d = {};
-  for (const [model, total] of Object.entries(raw)) {
-    d[model] = Math.ceil(total);
+    // 用 Oven 欄位累加需求台數（取ceiling）
+    const series = getSeriesByModel(p.ovenType);
+    if (!series) continue;
+    d[p.ovenType] = (d[p.ovenType] || 0) + Math.ceil(c.oven);
   }
   return d;
 }
@@ -546,8 +616,7 @@ function renderProducts() {
   tbody.innerHTML = products.map((p, i) => {
     const c = calcProduct(p);
     const optStr = models.map(m => `<option value="${m}"${m===p.ovenType?' selected':''}>${m}</option>`).join('');
-    return `<tr id="row-${p.id}" draggable="true" data-id="${p.id}">
-      <td style="text-align:center"><span class="drag-handle" title="拖曳排序">⠿</span></td>
+    return `<tr id="row-${p.id}">
       <td style="text-align:center;color:var(--text-muted)">${i+1}</td>
       <td><select class="ti" style="min-width:110px" onchange="updateField(${p.id},'ovenType',this.value)">${optStr}</select></td>
       <td><input class="ti" value="${esc(p.package)}" placeholder="96B"  style="min-width:60px" oninput="updateField(${p.id},'package',this.value)"></td>
@@ -570,36 +639,6 @@ function renderProducts() {
   }).join('');
 
   wrap.scrollLeft = scrollLeft;
-
-  // 拖曳排序事件
-  let dragSrcId = null;
-  tbody.querySelectorAll('tr[draggable]').forEach(tr => {
-    tr.addEventListener('dragstart', e => {
-      dragSrcId = parseInt(tr.dataset.id);
-      tr.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    tr.addEventListener('dragend', () => {
-      tr.classList.remove('dragging');
-      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-    });
-    tr.addEventListener('dragover', e => {
-      e.preventDefault();
-      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-      if (parseInt(tr.dataset.id) !== dragSrcId) tr.classList.add('drag-over');
-    });
-    tr.addEventListener('drop', e => {
-      e.preventDefault();
-      const targetId = parseInt(tr.dataset.id);
-      if (targetId === dragSrcId) return;
-      const srcIdx = products.findIndex(p => p.id === dragSrcId);
-      const tgtIdx = products.findIndex(p => p.id === targetId);
-      const [moved] = products.splice(srcIdx, 1);
-      products.splice(tgtIdx, 0, moved);
-      saveState();
-      renderAll();
-    });
-  });
 }
 
 function esc(s) { return (s||'').replace(/"/g,'&quot;'); }
@@ -726,70 +765,6 @@ function renderAlertsAndSummary() {
 }
 
 // ══════════════════════════════════════════════════════════
-// IMPORT CSV
-// ══════════════════════════════════════════════════════════
-function importCSV(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const lines = e.target.result.replace(/\r/g, '').split('\n').filter(l => l.trim());
-    if (lines.length < 2) { alert('CSV 內無資料'); return; }
-
-    // 解析 header，對應欄位名稱
-    const parseRow = line => line.split(',').map(v => v.replace(/^"|"$/g, '').trim());
-    const headers = parseRow(lines[0]).map(h => h.toLowerCase());
-
-    const col = name => headers.indexOf(name);
-    const idxOvenType   = col('oven type');
-    const idxPackage    = col('package');
-    const idxOwner      = col('owner');
-    const idxBibSet     = col('bib(set)');
-    const idxBiTime     = col('bi time(hrs)');
-    const idxOperTime   = col('operate time(hrs)');
-    const idxMaskRate   = col('mask rate');
-    const idxSocket     = col('socket(ea)');
-    const idxBibType    = col('bib type');
-
-    if (idxOvenType === -1) { alert('CSV 格式不符，找不到 Oven Type 欄位'); return; }
-
-    const imported = [];
-    for (let i = 1; i < lines.length; i++) {
-      const row = parseRow(lines[i]);
-      if (!row[idxOvenType]) continue;
-      imported.push({
-        id: Date.now() + i,
-        ovenType:    row[idxOvenType]  || 'ANDOC7H2',
-        package:     idxPackage  >= 0 ? row[idxPackage]  : '',
-        owner:       idxOwner    >= 0 ? row[idxOwner]    : '',
-        bibSet:      idxBibSet   >= 0 ? parseFloat(row[idxBibSet])   || 1 : 1,
-        biTime:      idxBiTime   >= 0 ? parseFloat(row[idxBiTime])   || 1 : 1,
-        operateTime: idxOperTime >= 0 ? parseFloat(row[idxOperTime]) || 8 : 8,
-        maskRate:    idxMaskRate >= 0 ? parseFloat(row[idxMaskRate]) || 0.95 : 0.95,
-        socket:      idxSocket   >= 0 ? parseFloat(row[idxSocket])   || 1 : 1,
-        bibType:     idxBibType  >= 0 ? row[idxBibType]  : '',
-      });
-    }
-
-    if (imported.length === 0) { alert('CSV 內無有效資料列'); return; }
-
-    if (products.length > 0) {
-      const choice = confirm(`匯入 ${imported.length} 筆資料。\n確定 → 取代現有資料\n取消 → 附加到現有資料`);
-      if (choice) products = imported;
-      else products = [...products, ...imported];
-    } else {
-      products = imported;
-    }
-
-    saveState();
-    renderAll();
-    input.value = '';
-    alert(`成功匯入 ${imported.length} 筆產品資料`);
-  };
-  reader.readAsText(file, 'UTF-8');
-}
-
-// ══════════════════════════════════════════════════════════
 // EXPORT CSV
 // ══════════════════════════════════════════════════════════
 function exportCSV() {
@@ -811,6 +786,217 @@ function exportCSV() {
 }
 
 // ══════════════════════════════════════════════════════════
+// PHASE 2 – CONSTRAINTS
+// ══════════════════════════════════════════════════════════
+function loadConstraints() {
+  try { constraints = JSON.parse(localStorage.getItem('bi_constraints')) || []; }
+  catch { constraints = []; }
+}
+
+function saveConstraints() {
+  localStorage.setItem('bi_constraints', JSON.stringify(constraints));
+}
+
+function matchPattern(pattern, value) {
+  if (!pattern) return true;
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  const regex = new RegExp('^' + escaped + '$', 'i');
+  return regex.test(value);
+}
+
+function getAllUnits() {
+  const result = [];
+  for (const [series, data] of Object.entries(machines)) {
+    for (const u of data.units) result.push({ series, unit: u });
+  }
+  result.sort((a, b) => a.series.localeCompare(b.series) || a.unit.localeCompare(b.unit, undefined, { numeric: true }));
+  return result;
+}
+
+function populateUnitDropdowns() {
+  const units = getAllUnits();
+  const opts  = units.map(u => `<option value="${u.unit}">${u.unit}</option>`).join('');
+  const ncUnit = document.getElementById('nc-unit');
+  const qSel   = document.getElementById('q-unit-select');
+  if (ncUnit) ncUnit.innerHTML = opts;
+  if (qSel)   qSel.innerHTML  = '<option value="">— 選取機台 —</option>' + opts;
+}
+
+function addConstraint() {
+  const unit   = document.getElementById('nc-unit').value;
+  const pkg    = document.getElementById('nc-package').value.trim();
+  const owner  = document.getElementById('nc-owner').value.trim();
+  const partNo = document.getElementById('nc-partno').value.trim();
+  const note   = document.getElementById('nc-note').value.trim();
+  if (!unit) { alert('請選擇機台編號'); return; }
+  constraints.push({ id: Date.now(), unit, package: pkg, owner, partNo, note });
+  saveConstraints();
+  renderConstraints();
+  document.getElementById('nc-package').value = '';
+  document.getElementById('nc-owner').value   = '';
+  document.getElementById('nc-partno').value  = '';
+  document.getElementById('nc-note').value    = '';
+}
+
+function deleteConstraint(id) {
+  const c = constraints.find(x => x.id === id);
+  if (!confirm(`確定刪除機台 ${c?.unit} 的這條限制規則？`)) return;
+  constraints = constraints.filter(x => x.id !== id);
+  saveConstraints();
+  renderConstraints();
+}
+
+function editConstraint(id) {
+  const row = document.getElementById('crow-' + id);
+  const c   = constraints.find(x => x.id === id);
+  if (!row || !c) return;
+  const units = getAllUnits();
+  const uOpts = units.map(u => `<option value="${u.unit}"${u.unit===c.unit?' selected':''}>${u.unit}</option>`).join('');
+  row.innerHTML = `
+    <td style="text-align:center;color:var(--text-muted)">${constraints.indexOf(c)+1}</td>
+    <td><select class="ti" id="eu-${id}" style="min-width:80px">${uOpts}</select></td>
+    <td><input class="ti" id="ep-${id}" value="${esc(c.package||'')}" placeholder="空=不限" style="min-width:70px"></td>
+    <td><input class="ti" id="eo-${id}" value="${esc(c.owner||'')}"   placeholder="空=不限" style="min-width:60px"></td>
+    <td><input class="ti" id="en-${id}" value="${esc(c.partNo||'')}"  placeholder="空=不限" style="min-width:90px"></td>
+    <td><input class="ti" id="et-${id}" value="${esc(c.note||'')}"    style="min-width:90px"></td>
+    <td style="text-align:center;white-space:nowrap">
+      <button class="btn btn-primary btn-sm"   onclick="saveConstraintEdit(${id})">✓ 儲存</button>
+      <button class="btn btn-secondary btn-sm" onclick="renderConstraints()">取消</button>
+    </td>`;
+}
+
+function saveConstraintEdit(id) {
+  const c = constraints.find(x => x.id === id);
+  if (!c) return;
+  c.unit    = document.getElementById(`eu-${id}`).value;
+  c.package = document.getElementById(`ep-${id}`).value.trim();
+  c.owner   = document.getElementById(`eo-${id}`).value.trim();
+  c.partNo  = document.getElementById(`en-${id}`).value.trim();
+  c.note    = document.getElementById(`et-${id}`).value.trim();
+  saveConstraints();
+  renderConstraints();
+}
+
+function renderConstraints() {
+  const tbody = document.getElementById('constraintBody');
+  const empty = document.getElementById('constraintEmpty');
+  const tbl   = document.getElementById('constraintTable');
+  const badge = document.getElementById('constraintCount');
+  if (badge) badge.textContent = `${constraints.length} 條`;
+  if (!tbody) return;
+  if (constraints.length === 0) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    if (tbl)   tbl.style.display   = 'none';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (tbl)   tbl.style.display   = '';
+  tbody.innerHTML = constraints.map((c, i) => `
+    <tr id="crow-${c.id}">
+      <td style="text-align:center;color:var(--text-muted)">${i+1}</td>
+      <td><span style="font-family:var(--mono);color:var(--accent)">${esc(c.unit)}</span></td>
+      <td>${c.package ? `<span class="badge-neutral">${esc(c.package)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${c.owner   ? `<span class="badge-neutral">${esc(c.owner)}</span>`   : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${c.partNo  ? `<span style="font-family:var(--mono);font-size:12px;color:var(--yellow)">${esc(c.partNo)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td style="font-size:12px;color:var(--text-secondary)">${esc(c.note||'') || '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td style="text-align:center;white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="editConstraint(${c.id})">✏ 編輯</button>
+        <button class="btn btn-danger btn-sm"    onclick="deleteConstraint(${c.id})">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+function queryMachine() {
+  const typed  = document.getElementById('q-unit-input').value.trim().toUpperCase();
+  const picked = document.getElementById('q-unit-select').value;
+  const unit   = typed || picked;
+  if (!unit) { alert('請輸入或選取機台編號'); return; }
+  document.getElementById('q-unit-input').value = unit;
+  const matched = constraints.filter(c => c.unit.toUpperCase() === unit);
+  const div     = document.getElementById('queryResult');
+  if (matched.length === 0) {
+    div.innerHTML = `<div class="alert-ok">✅ <strong>${esc(unit)}</strong> 目前無限制條件</div>`;
+    return;
+  }
+  const cards = matched.map(c => `
+    <div class="constraint-query-card">
+      <div>
+        <div class="constraint-label">Package</div>
+        ${c.package ? `<span class="badge-neutral">${esc(c.package)}</span>` : '<span style="color:var(--text-muted);font-size:12px">不限</span>'}
+      </div>
+      <div>
+        <div class="constraint-label">Owner</div>
+        ${c.owner ? `<span class="badge-neutral">${esc(c.owner)}</span>` : '<span style="color:var(--text-muted);font-size:12px">不限</span>'}
+      </div>
+      <div>
+        <div class="constraint-label">Part No</div>
+        ${c.partNo ? `<span style="font-family:var(--mono);font-size:12px;color:var(--yellow)">${esc(c.partNo)}</span>` : '<span style="color:var(--text-muted);font-size:12px">不限</span>'}
+      </div>
+      <div>
+        <div class="constraint-label">備註</div>
+        <span style="font-size:12px;color:var(--text-secondary)">${esc(c.note||'') || '—'}</span>
+      </div>
+    </div>`).join('');
+  div.innerHTML = `
+    <div style="margin-bottom:12px">
+      <span class="badge-over">⚠ ${esc(unit)} 共有 ${matched.length} 條限制規則</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">${cards}</div>`;
+}
+
+function exportConstraintsCSV() {
+  if (constraints.length === 0) { alert('目前無限制規則可匯出'); return; }
+  const headers = ['Unit','Package','Owner','Part No','備註'];
+  const rows    = constraints.map(c => [c.unit, c.package||'', c.owner||'', c.partNo||'', c.note||'']);
+  const csv     = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const blob    = new Blob(['\ufeff'+csv], { type:'text/csv;charset=utf-8;' });
+  const a       = document.createElement('a');
+  a.href        = URL.createObjectURL(blob);
+  a.download    = `BI機台限制規則_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+function parseCSVLine(line) {
+  const result = []; let inQ = false; let cur = '';
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (inQ && line[i+1]==='"') { cur+='"'; i++; } else inQ=!inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur); cur=''; }
+    else cur += ch;
+  }
+  result.push(cur);
+  return result;
+}
+
+function importConstraintsCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.replace(/^\uFEFF/,'').split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) { alert('CSV 格式錯誤或無資料'); return; }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      if (!cols[0]) continue;
+      parsed.push({ id: Date.now()+i, unit:cols[0]||'', package:cols[1]||'', owner:cols[2]||'', partNo:cols[3]||'', note:cols[4]||'' });
+    }
+    if (parsed.length === 0) { alert('未找到有效資料'); return; }
+    let replace = false;
+    if (constraints.length > 0) {
+      replace = confirm(`目前已有 ${constraints.length} 條規則。\n確定要【取代】？\n（取消 = 附加到現有規則）`);
+    }
+    constraints = replace ? parsed : [...constraints, ...parsed];
+    saveConstraints();
+    renderConstraints();
+    input.value = '';
+    alert(`匯入完成，共 ${parsed.length} 條規則`);
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ══════════════════════════════════════════════════════════
 // RENDER ALL
 // ══════════════════════════════════════════════════════════
 function renderAll() {
@@ -823,7 +1009,10 @@ function renderAll() {
 // INIT
 // ══════════════════════════════════════════════════════════
 loadState();
+loadConstraints();
 renderAll();
+renderConstraints();
+populateUnitDropdowns();
 </script>
 </body>
 </html>
