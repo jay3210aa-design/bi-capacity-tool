@@ -30,7 +30,7 @@
   --font:'Segoe UI',system-ui,-apple-system,sans-serif;
   --mono:'Consolas','Courier New',monospace;
 }
-body{background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh;zoom:1.3}
+body{background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh;zoom:1.5}
 
 /* ── Header ── */
 .header{background:var(--bg-secondary);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px}
@@ -714,7 +714,7 @@ function renderAlertsAndSummary() {
       const c = calcProduct(p);
       return `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px;">
         <span style="color:var(--text-secondary);font-family:var(--mono);min-width:32px">${p.owner||'—'}</span>
-        <span style="color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.package||'—'}</span>
+        <span style="color:var(--text-muted);font-family:var(--mono);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.package||'—'}</span>
         <span style="color:var(--accent);font-family:var(--mono);white-space:nowrap">${fmt(c.oven,1)}</span>
       </div>`;
     }).join('');
@@ -740,8 +740,8 @@ function renderAlertsAndSummary() {
       <div class="sum-model">${model}</div>
       ${assigned.length > 0 ? `
       <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">
-          <span>Owner</span><span>Package</span><span>Oven</span>
+        <div style="display:flex;gap:6px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">
+          <span style="min-width:32px">Owner</span><span style="flex:1">Package</span><span style="white-space:nowrap">Oven</span>
         </div>
         ${assignedRows}
       </div>` : ''}`;
