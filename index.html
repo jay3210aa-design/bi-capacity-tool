@@ -30,7 +30,7 @@
   --font:'Segoe UI',system-ui,-apple-system,sans-serif;
   --mono:'Consolas','Courier New',monospace;
 }
-body{background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh}
+body{background:var(--bg-primary);color:var(--text-primary);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh;zoom:1.5}
 
 /* ── Header ── */
 .header{background:var(--bg-secondary);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px}
@@ -172,7 +172,6 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
     <div class="header-sub">Burn-In 生產線 · 半導體測試</div>
   </div>
   <div class="header-right">
-    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ 匯出 CSV</button>
     <button class="btn btn-danger btn-sm" onclick="resetAll()">🔄 重置資料</button>
   </div>
 </div>
@@ -204,7 +203,11 @@ select.ti{cursor:pointer;appearance:none;background-image:url("data:image/svg+xm
     <div class="section">
       <div class="section-header">
         <div class="section-title">📋 產品參數設定</div>
-        <button class="btn btn-primary btn-sm" onclick="addProduct()">＋ 新增產品</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="exportCSV()">⬇ 匯出 CSV</button>
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer">⬆ 匯入 CSV<input type="file" accept=".csv" style="display:none" onchange="importProductsCSV(this)"></label>
+          <button class="btn btn-primary btn-sm" onclick="addProduct()">＋ 新增產品</button>
+        </div>
       </div>
       <div id="productTableArea">
         <div class="table-wrap">
@@ -783,6 +786,48 @@ function exportCSV() {
   a.href = URL.createObjectURL(blob);
   a.download = `BI產能計算_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
+}
+
+// ══════════════════════════════════════════════════════════
+// IMPORT PRODUCTS CSV
+// ══════════════════════════════════════════════════════════
+function importProductsCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.replace(/^\uFEFF/,'').split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) { alert('CSV 格式錯誤或無資料'); return; }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      // 欄位順序：# | OvenType | Package | Owner | BIB(set) | BI Time | Operate Time | Mask Rate | Socket | BIB Type | (計算欄忽略)
+      if (!cols[1]) continue;
+      parsed.push({
+        id:          Date.now() + i,
+        ovenType:    cols[1] || 'ANDOC7H2',
+        package:     cols[2] || '',
+        owner:       cols[3] || '',
+        bibSet:      parseFloat(cols[4]) || 1,
+        biTime:      parseFloat(cols[5]) || 1,
+        operateTime: parseFloat(cols[6]) || 8,
+        maskRate:    parseFloat(cols[7]) || 0.95,
+        socket:      parseFloat(cols[8]) || 1,
+        bibType:     cols[9] || '',
+      });
+    }
+    if (parsed.length === 0) { alert('未找到有效資料'); return; }
+    let replace = false;
+    if (products.length > 0) {
+      replace = confirm(`目前已有 ${products.length} 筆產品。\n確定要【取代】？\n（取消 = 附加到現有產品）`);
+    }
+    products = replace ? parsed : [...products, ...parsed];
+    saveState();
+    renderAll();
+    input.value = '';
+    alert(`匯入完成，共 ${parsed.length} 筆產品`);
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
 // ══════════════════════════════════════════════════════════
